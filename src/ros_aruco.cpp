@@ -17,7 +17,7 @@ int ArUcoNode::arucoDetect() {
     cv::VideoCapture cap(0); // open the default camera
     if(!cap.isOpened()) {
         ROS_WARN("%s", "Camera is not reachable");
-        return 0;
+        return -1;
     }
     // set camera parameters
     cap.set(CV_CAP_PROP_FRAME_WIDTH,width);
