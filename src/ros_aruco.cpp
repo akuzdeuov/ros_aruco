@@ -15,73 +15,75 @@
 
 int ArUcoNode::arucoDetect() {
     cv::VideoCapture cap(0); // open the default camera
-    if(!cap.isOpened()) {
-        ROS_WARN("%s", "Camera is not reachable");
-        return -1;
-    }
+
     // set camera parameters
+    cap.set(CV_CAP_PROP_FOURCC ,CV_FOURCC('M', 'J', 'P', 'G'));
+    cap.set(CV_CAP_PROP_FPS,fps);
     cap.set(CV_CAP_PROP_FRAME_WIDTH,width);
     cap.set(CV_CAP_PROP_FRAME_HEIGHT,height);
-    cap.set(CV_CAP_PROP_FPS,fps);
-    cap.set(CV_CAP_PROP_FOURCC ,CV_FOURCC('M', 'J', 'P', 'G') );
-    cv::namedWindow("window",1);
 
-    while(cap.grab()){
-        //std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
-        //std::cout<<"1 "<<ros::Time::now()<<std::endl;
-        cv::Mat frame, image;
-        cap >> image; // get a new frame from camera
-        // sharpen the frame
-        //cv::GaussianBlur(frame, image, cv::Size(0, 0), 5);
-        //cv::addWeighted(frame, 1.5, image, -0.5, 0, image);
+    //cv::namedWindow("ArUco Detection",1);
+    cv::Mat frame, image;
 
-        fiducial_msgs::FiducialTransformArray fta;
-        fta.header.stamp = ros::Time::now();
-        image_seq = image_seq + 1;
-        fta.image_seq = image_seq;
+    if(!cap.isOpened()) {
+        ROS_WARN("%s", "Camera is not opened");
+        return -1;
+    } else {
+        while(ros::ok()){
+            //std::chrono::high_resolution_clock::time_point t1 = std::chrono::high_resolution_clock::now();
+            cap >> image; // get a new frame from camera
+            // sharpen the frame
+            //cv::GaussianBlur(frame, image, cv::Size(0, 0), 5);
+            //cv::addWeighted(frame, 1.5, image, -0.5, 0, image);
 
-        std::vector<int> ids;
-        std::vector<std::vector<cv::Point2f>> corners;
-        // detect markers
-        cv::aruco::detectMarkers(image, dictionary, corners, ids, parameters);
-        // if at least one marker detected
-        if (!ids.empty()) {
-            // draw detected markers
-            cv::aruco::drawDetectedMarkers(image, corners, ids);
-            std::vector<cv::Vec3d> rvecs, tvecs;
-            // estimate pose of each marker
-            cv::aruco::estimatePoseSingleMarkers(corners, aruco_len, cameraMatrix, distCoeffs, rvecs, tvecs);
-            // draw axis for each marker
-            for(int i=0; i<ids.size(); ++i){
-                double angle = norm(rvecs[i]);
-                cv::Vec3d axis = rvecs[i] / angle;
+            fiducial_msgs::FiducialTransformArray fta;
+            fta.header.stamp = ros::Time::now();
+            image_seq = image_seq + 1;
+            fta.image_seq = image_seq;
 
-                fiducial_msgs::FiducialTransform ft;
-                ft.fiducial_id = ids[i];
+            std::vector<int> ids;
+            std::vector<std::vector<cv::Point2f>> corners;
+            // detect markers
+            cv::aruco::detectMarkers(image, dictionary, corners, ids, parameters);
+            // if at least one marker detected
+            if (!ids.empty()) {
+                // draw detected markers
+                //cv::aruco::drawDetectedMarkers(image, corners, ids);
+                std::vector<cv::Vec3d> rvecs, tvecs;
+                // estimate pose of each marker
+                cv::aruco::estimatePoseSingleMarkers(corners, aruco_len, cameraMatrix, distCoeffs, rvecs, tvecs);
+                // draw axis for each marker
+                for(int i=0; i<ids.size(); ++i){
+                    double angle = norm(rvecs[i]);
 
-                ft.transform.translation.x = tvecs[i][0];
-                ft.transform.translation.y = tvecs[i][1];
-                ft.transform.translation.z = tvecs[i][2];
+                    cv::Vec3d axis = rvecs[i] / angle;
 
-                tf2::Quaternion q;
-                q.setRotation(tf2::Vector3(axis[0], axis[1], axis[2]), angle);
+                    fiducial_msgs::FiducialTransform ft;
+                    ft.fiducial_id = ids[i];
 
-                ft.transform.rotation.w = q.w();
-                ft.transform.rotation.x = q.x();
-                ft.transform.rotation.y = q.y();
-                ft.transform.rotation.z = q.z();
+                    ft.transform.translation.x = tvecs[i][0];
+                    ft.transform.translation.y = tvecs[i][1];
+                    ft.transform.translation.z = tvecs[i][2];
 
-                fta.transforms.emplace_back(ft);
-                cv::aruco::drawAxis(image, cameraMatrix, distCoeffs, rvecs[i], tvecs[i], axis_len);
+                    tf2::Quaternion q;
+                    q.setRotation(tf2::Vector3(axis[0], axis[1], axis[2]), angle);
+
+                    ft.transform.rotation.w = q.w();
+                    ft.transform.rotation.x = q.x();
+                    ft.transform.rotation.y = q.y();
+                    ft.transform.rotation.z = q.z();
+
+                    fta.transforms.emplace_back(ft);
+                    //cv::aruco::drawAxis(image, cameraMatrix, distCoeffs, rvecs[i], tvecs[i], axis_len);
+                }
+                pose_pub.publish(fta);
             }
-            pose_pub.publish(fta);
+            //cv::imshow("ArUco Detection", image);
+            //cv::waitKey(1);
+            /*std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
+            std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2-t1);
+            std::cout<<1.0/time_span.count() <<std::endl;*/
         }
-        //std::cout<<"2 "<<ros::Time::now()<<std::endl;
-        cv::imshow("window", image);
-        cv::waitKey(1);
-        /*std::chrono::high_resolution_clock::time_point t2 = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double> time_span = std::chrono::duration_cast<std::chrono::duration<double>>(t2-t1);
-        std::cout<<time_span.count() <<std::endl;*/
     }
 }
 
@@ -100,7 +102,7 @@ ArUcoNode::ArUcoNode():n_h_("") {
     n_h_.param<double>("adaptiveThreshConstant", parameters->adaptiveThreshConstant, 7);
     n_h_.param<int>("adaptiveThreshWinSizeMax", parameters->adaptiveThreshWinSizeMax, 21);
     n_h_.param<int>("adaptiveThreshWinSizeMin", parameters->adaptiveThreshWinSizeMin, 3);
-    n_h_.param<int>("adaptiveThreshWinSizeStep", parameters->adaptiveThreshWinSizeStep, 4);
+    n_h_.param<int>("adaptiveThreshWinSizeStep", parameters->adaptiveThreshWinSizeStep, 10);
     n_h_.param<int>("cornerRefinementMaxIterations", parameters->cornerRefinementMaxIterations, 30);
     n_h_.param<double>("cornerRefinementMinAccuracy", parameters->cornerRefinementMinAccuracy, 0.01);
     n_h_.param<int>("cornerRefinementWinSize", parameters->cornerRefinementWinSize, 3);
@@ -130,16 +132,16 @@ ArUcoNode::ArUcoNode():n_h_("") {
 
     n_h_.param<int>("minDistanceToBorder", parameters->minDistanceToBorder, 1);
     n_h_.param<double>("minMarkerDistanceRate", parameters->minMarkerDistanceRate, 0.05);
-    n_h_.param<double>("minMarkerPerimeterRate", parameters->minMarkerPerimeterRate, 0.03); // default 0.3
+    n_h_.param<double>("minMarkerPerimeterRate", parameters->minMarkerPerimeterRate, 0.13); // default 0.3
     n_h_.param<double>("maxMarkerPerimeterRate", parameters->maxMarkerPerimeterRate, 4.0);
     n_h_.param<double>("minOtsuStdDev", parameters->minOtsuStdDev, 5.0);
     n_h_.param<double>("perspectiveRemoveIgnoredMarginPerCell", parameters->perspectiveRemoveIgnoredMarginPerCell, 0.13);
     n_h_.param<int>("perspectiveRemovePixelPerCell", parameters->perspectiveRemovePixelPerCell, 4);
-    n_h_.param<double>("polygonalApproxAccuracyRate", parameters->polygonalApproxAccuracyRate, 0.04);
+    n_h_.param<double>("polygonalApproxAccuracyRate", parameters->polygonalApproxAccuracyRate, 0.01);
 
     // ROS publsiher parameters
     pose_pub = n_h_.advertise<fiducial_msgs::FiducialTransformArray>("/aruco_poses", 1);
     image_seq = 0;
-
+    // start pose estimation algorithm
     arucoDetect();
 }
